@@ -1,0 +1,24 @@
+# Production GPU preset. Use with: helm install stt ./helm/stt -f values-gpu.yaml
+config:
+  device: cuda
+  mode: dictation
+  language: de
+
+gpu:
+  enabled: true
+  count: 1
+  # Schedule onto the consumer/prosumer GPU node pool (24-96 GB, §11).
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+
+resources:
+  requests:
+    cpu: "2"
+    memory: 4Gi
+  limits:
+    cpu: "8"
+    memory: 16Gi
+
+probes:
+  readiness:
+    initialDelaySeconds: 45

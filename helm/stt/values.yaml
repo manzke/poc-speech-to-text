@@ -1,0 +1,87 @@
+# Default values for the STT chart. CPU-friendly defaults; override with
+# values-gpu.yaml for a production GPU node, or values-cpu.yaml for an explicit
+# CPU tier. The image is identical across tiers (ADR-004); only env + GPU
+# scheduling differ.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/manzke/poc-speech-to-text
+  tag: dev
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Service configuration (STT_* env, §9). device "" => container auto-detects.
+config:
+  device: ""           # "", "cpu", or "cuda"
+  mode: dictation      # dictation | subtitles (FR-2)
+  language: de         # default German (ADR-001 / FR-4)
+  modelPath: /models/de-default
+  warmupFile: /app/server/warmup/de_warmup.wav
+  port: 8000
+  # Trusted proxy IPs for X-Forwarded-* (set behind the ingress, §10).
+  forwardedAllowIps: "*"
+  # Free-form extra wlk flags if ever needed.
+  extraArgs: ""
+
+# GPU scheduling. Disabled by default (CPU tier, ADR-007).
+gpu:
+  enabled: false
+  count: 1
+  # Node selector / runtimeClass for the NVIDIA device plugin.
+  nodeSelector: {}
+  runtimeClassName: ""
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    cpu: "4"
+    memory: 8Gi
+
+# Readiness gated on model warmup (§10): give the slow first decode time.
+probes:
+  readiness:
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+  liveness:
+    initialDelaySeconds: 120
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 6
+
+service:
+  type: ClusterIP
+  port: 8000
+
+# WebSocket-aware ingress (§10). Annotations target nginx; adjust for your controller.
+ingress:
+  enabled: false
+  className: nginx
+  host: stt.example.com
+  tls:
+    enabled: true
+    secretName: stt-tls
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.org/websocket-services: "" # set by template to the service name
+
+# HPA scaffold — disabled until Phase 2 wires custom concurrency metrics (NFR-6).
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  # Phase 2: replace with a custom "active_streams" metric.
+  targetCPUUtilizationPercentage: 70
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

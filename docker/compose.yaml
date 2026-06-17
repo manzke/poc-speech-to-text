@@ -1,0 +1,45 @@
+# Local dev / on-prem compose with CPU and GPU profiles.
+#
+#   CPU (Mac / no-GPU dev):   docker compose --profile cpu up --build
+#   GPU (prod-like Linux):    docker compose --profile gpu up --build
+#
+# Both services run the SAME image (ADR-004); they differ only in the resolved
+# device and (for the gpu profile) the requested nvidia GPU. Open the SDK demo
+# at clients/web-sdk/examples/index.html and point it at ws://localhost:8000/asr.
+name: stt
+
+x-common: &common
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: ghcr.io/manzke/poc-speech-to-text:dev
+  ports:
+    - "8000:8000"
+  environment:
+    STT_MODE: ${STT_MODE:-dictation}
+    STT_LANGUAGE: ${STT_LANGUAGE:-de}
+  restart: unless-stopped
+
+services:
+  stt-cpu:
+    <<: *common
+    profiles: ["cpu"]
+    environment:
+      STT_MODE: ${STT_MODE:-dictation}
+      STT_LANGUAGE: ${STT_LANGUAGE:-de}
+      STT_DEVICE: cpu
+
+  stt-gpu:
+    <<: *common
+    profiles: ["gpu"]
+    environment:
+      STT_MODE: ${STT_MODE:-dictation}
+      STT_LANGUAGE: ${STT_LANGUAGE:-de}
+      STT_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: ["gpu"]

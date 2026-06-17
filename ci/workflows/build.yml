@@ -1,0 +1,56 @@
+name: build-image
+
+# Builds the single multi-arch image with the German model baked in (ADR-004/005)
+# and pushes it to GHCR on tags. PRs build (no push) as a smoke check.
+#
+# NOTE: the model bake downloads weights from Hugging Face at BUILD time. In an
+# air-gapped CI, pre-mirror the model and point MODEL_ID at the internal source.
+# Building both arches with a multi-GB model is slow; the default model is the
+# 809M turbo fine-tune (ADR-001) to keep image size manageable (§15 risk).
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "docker/**"
+      - "scripts/convert_model.py"
+      - "server/**"
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  buildx:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and push on tags) multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.ref_name }}
+          build-args: |
+            MODEL_ID=primeline/whisper-large-v3-turbo-german
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Phase-3 todo: cosign sign + SBOM attestation (§13 supply chain).

@@ -1,0 +1,24 @@
+{{- if .Values.autoscaling.enabled -}}
+# Phase-2 scaffold. CPU-target HPA today; replace the metric with a custom
+# concurrent-stream / queue-depth metric once load testing sets NFR-6 (§10/§15).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "stt.fullname" . }}
+  labels:
+    {{- include "stt.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "stt.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
