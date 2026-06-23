@@ -7,6 +7,15 @@ explicit allowlist below. This enforces the "strict permissive by default"
 posture for the components we REDISTRIBUTE — it does not police this repo's own
 AGPL-3.0 license.
 
+Policy (owner decisions):
+  * Permissive (MIT/BSD/Apache/PSF/ISC/MPL-2.0/…) -> allowed.
+  * Weak/lib-level copyleft (LGPL) -> allowed: dynamically linked, imposes no
+    copyleft on our code (e.g. `soxr`, a transitive `librosa` dep).
+  * Strong/network copyleft (GPL/AGPL/SSPL) and non-commercial/CC -> blocked.
+  * NVIDIA CUDA runtime wheels (GPU variant) -> allowed by prefix under the
+    NVIDIA CUDA EULA (accepted in the PRD licensing matrix).
+  * Translation/diarization packages -> hard-blocked regardless of license.
+
 Usage:  pip install pip-licenses && python scripts/check_licenses.py
 """
 
@@ -27,23 +36,41 @@ PERMISSIVE = (
     "HISTORICAL PERMISSION NOTICE",  # HPND
     "ZLIB",
     "MOZILLA PUBLIC LICENSE 2.0",  # MPL-2.0: weak-copyleft, file-level; acceptable
+    "MPL-2.0",
     "UNLICENSE",
     "0BSD",
     "WTFPL",
 )
 
+# Weak (lib-level) copyleft we explicitly accept (per owner decision): LGPL
+# imposes no copyleft on our own code when the library is dynamically linked, as
+# is the case for our transitive deps (e.g. `soxr`, pulled by `librosa`). Strong
+# copyleft (GPL/AGPL/SSPL) and non-commercial/CC remain hard violations below.
+WEAK_COPYLEFT_ALLOWED = (
+    "LGPL",
+    "LESSER GENERAL PUBLIC",
+)
+
+# Always-block tokens: strong/network copyleft and non-commercial/Creative
+# Commons. Checked BEFORE the permissive/weak-copyleft tokens so an "AGPL" or
+# "CC-BY-NC" string can never be waved through.
+HARD_BLOCK = (
+    "AGPL",
+    "AFFERO",
+    "SSPL",
+    "NON-COMMERCIAL",
+    "NONCOMMERCIAL",
+    "CC-BY-NC",
+    "CREATIVE COMMONS",
+)
+
 # Per-package exceptions: packages whose metadata license is missing/ambiguous
 # but whose actual license is known-good. Keep this list short and justified.
 PACKAGE_ALLOWLIST = {
-    # NVIDIA CUDA runtime wheels pulled in by the CUDA (cu129) build. Shipped
-    # under the NVIDIA CUDA EULA, which permits redistribution of the runtime;
-    # they are NOT present in the CPU build scanned by CI but are allowlisted so
-    # the same gate passes if ever run against the GPU image.
-    "nvidia-cublas-cu12", "nvidia-cuda-cupti-cu12", "nvidia-cuda-nvrtc-cu12",
-    "nvidia-cuda-runtime-cu12", "nvidia-cudnn-cu12", "nvidia-cufft-cu12",
-    "nvidia-curand-cu12", "nvidia-cusolver-cu12", "nvidia-cusparse-cu12",
-    "nvidia-nccl-cu12", "nvidia-nvjitlink-cu12", "nvidia-nvtx-cu12",
+    # openai/triton — MIT, but metadata is often blank.
     "triton",
+    # setuptools — MIT/PSF, frequently reported as UNKNOWN by pip metadata.
+    "setuptools",
 }
 
 # Packages that, if present, indicate a forbidden extra leaked into the build
@@ -55,9 +82,36 @@ FORBIDDEN_PACKAGES = {
 }
 
 
+def is_nvidia_cuda(name: str) -> bool:
+    """NVIDIA CUDA runtime wheels (any CUDA major: -cu12/-cu13/...).
+
+    Pulled in by the CUDA build of torch/ctranslate2. Redistributable under the
+    NVIDIA CUDA EULA and already accepted in the PRD licensing matrix for the GPU
+    variant; their pip metadata is NVIDIA-proprietary, so allow them by prefix.
+    """
+    low = name.lower()
+    return low.startswith(("nvidia-", "nvidia_", "cuda-", "cuda_"))
+
+
 def is_permissive(license_str: str) -> bool:
     up = (license_str or "").upper()
     return any(token in up for token in PERMISSIVE)
+
+
+def is_acceptable_license(license_str: str) -> bool:
+    """Classify a license string: True = redistributable under our policy.
+
+    Order matters: hard blocks first, then weak-copyleft allow, then plain GPL
+    block, then the permissive allowlist.
+    """
+    up = (license_str or "").upper()
+    if any(tok in up for tok in HARD_BLOCK):
+        return False
+    if any(tok in up for tok in WEAK_COPYLEFT_ALLOWED):
+        return True
+    if "GENERAL PUBLIC LICENSE" in up or "GPL" in up:  # plain GPL = strong copyleft
+        return False
+    return is_permissive(up)
 
 
 def main() -> int:
@@ -75,9 +129,9 @@ def main() -> int:
         if name.lower() in {p.lower() for p in FORBIDDEN_PACKAGES}:
             forbidden.append(f"{name} ({license_str})")
             continue
-        if name in PACKAGE_ALLOWLIST:
+        if name in PACKAGE_ALLOWLIST or is_nvidia_cuda(name):
             continue
-        if not is_permissive(license_str):
+        if not is_acceptable_license(license_str):
             violations.append(f"{name}: {license_str!r}")
 
     ok = True
@@ -94,11 +148,12 @@ def main() -> int:
             print(f"  - {v}")
         print(
             "\nIf a license string is merely missing/mislabeled but is actually "
-            "Apache/MIT/BSD, add the package to PACKAGE_ALLOWLIST with a comment."
+            "permissive (or weak-copyleft LGPL), add the package to "
+            "PACKAGE_ALLOWLIST with a comment, or extend the policy tokens."
         )
 
     if ok:
-        print(f"License gate passed: {len(packages)} packages, all permissive.")
+        print(f"License gate passed: {len(packages)} packages, all acceptable.")
         return 0
     return 1
 
