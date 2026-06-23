@@ -55,6 +55,25 @@ def already_converted(output: Path) -> bool:
     return (output / "model.bin").exists() and (output / "config.json").exists()
 
 
+def ensure_tokenizer_and_preprocessor(model_id: str, output: Path) -> None:
+    """Write tokenizer.json + preprocessor_config.json into the CT2 model dir.
+
+    faster-whisper requires a fast-tokenizer ``tokenizer.json`` at runtime, but
+    not every Whisper checkpoint ships one — e.g. the primeline German
+    fine-tunes only carry the slow-tokenizer files (vocab.json/merges.txt). So
+    rather than ``--copy_files tokenizer.json`` (which fails when absent), we
+    generate it (and the feature-extractor config) from the model via
+    transformers. The HF weights are already cached by the conversion step, so
+    this only loads small auxiliary files.
+    """
+    from transformers import AutoFeatureExtractor, AutoTokenizer
+
+    AutoTokenizer.from_pretrained(model_id, use_fast=True).save_pretrained(str(output))
+    AutoFeatureExtractor.from_pretrained(model_id).save_pretrained(str(output))
+    if not (output / "tokenizer.json").exists():
+        raise RuntimeError(f"failed to produce tokenizer.json for {model_id}")
+
+
 def write_provenance(output: Path, model_id: str, quantization: str) -> None:
     """Drop a small provenance file next to the weights for license clarity (ADR-005)."""
     (output / "MODEL_PROVENANCE.txt").write_text(
@@ -80,11 +99,13 @@ def main(argv: list[str] | None = None) -> int:
     # is idempotent across build-cache retries.
     output.parent.mkdir(parents=True, exist_ok=True)
 
+    # Convert weights only; tokenizer.json + preprocessor_config.json are
+    # generated afterwards (see ensure_tokenizer_and_preprocessor) because some
+    # checkpoints (primeline) do not ship tokenizer.json to copy.
     cmd = [
         "ct2-transformers-converter",
         "--model", args.model_id,
         "--output_dir", str(output),
-        "--copy_files", "tokenizer.json", "preprocessor_config.json",
         "--quantization", args.quantization,
         "--force",
     ]
@@ -95,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         print("[convert] conversion failed", file=sys.stderr)
         return result.returncode
 
+    ensure_tokenizer_and_preprocessor(args.model_id, output)
     write_provenance(output, args.model_id, args.quantization)
     print(f"[convert] baked {args.model_id} ({args.quantization}) into {output}", file=sys.stderr)
     return 0
