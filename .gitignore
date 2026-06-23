@@ -5,9 +5,10 @@ __pycache__/
 .venv/
 venv/
 
-# Node / web SDK
+# Node / web SDK / example app
 node_modules/
 clients/web-sdk/dist/
+examples/web-app/dist/
 
 # Models / baked artifacts (never commit weights; baked at image build)
 models/

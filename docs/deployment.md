@@ -34,6 +34,62 @@ at the edge, enforce OIDC/bearer auth in front of `/asr`, and set
 `config.forwardedAllowIps` to your proxy CIDR so WhisperLiveKit trusts the
 `X-Forwarded-*` headers.
 
+## Authentication (PRD §13)
+
+WhisperLiveKit has no built-in auth, so the chart ships an optional **auth
+gateway** (`server/auth_gateway.py`) that runs from the same image and is wired
+to the ingress via an nginx `auth_request`. Every request — including the `/asr`
+WebSocket upgrade — is sub-requested to the gateway, which returns 200/401; the
+audio stream itself never passes through it (no added latency).
+
+Token sources: `Authorization: Bearer <token>` or `?token=<token>` (the SDK uses
+the query form because browsers can't set WS handshake headers).
+
+Static shared token:
+
+```bash
+helm install stt ./helm/stt -f helm/stt/values-gpu.yaml \
+  --set ingress.enabled=true --set auth.enabled=true \
+  --set auth.mode=static --set auth.token=$(openssl rand -hex 24)
+```
+
+HS256 JWT (validate tokens minted by your IdP/app):
+
+```bash
+helm install stt ./helm/stt -f helm/stt/values-gpu.yaml \
+  --set ingress.enabled=true --set auth.enabled=true \
+  --set auth.mode=jwt --set auth.jwtSecret=<hs256-secret> \
+  --set auth.jwtAudience=stt --set auth.jwtIssuer=https://idp.example
+```
+
+For production, prefer `auth.existingSecret` (a Secret you manage) over inline
+values. Full OIDC (RS256/JWKS, login redirect) is best handled by fronting the
+gateway with `oauth2-proxy`; the gateway covers static-token and HS256-JWT today.
+
+## Air-gap verification (FR-6)
+
+`scripts/verify_airgap.sh` runs the built image with **`--network none`** and
+asserts it (a) reaches readiness with the baked model and (b) transcribes — i.e.
+makes zero outbound calls. Because the container has no network, the checks run
+inside it via `docker exec`.
+
+```bash
+BUILD=1 scripts/verify_airgap.sh stt:airgap-test   # build then verify
+# or, against a prebuilt image:
+scripts/verify_airgap.sh ghcr.io/manzke/poc-speech-to-text:<tag>
+```
+
+Wire it into CI as a job (workflow files must be added by a maintainer with the
+`workflows` permission):
+
+```yaml
+  airgap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: BUILD=1 IMAGE=stt:airgap-test bash scripts/verify_airgap.sh
+```
+
 ## Readiness / warmup
 
 Readiness and liveness probes hit the HTTP root. With `--warmup-file` set

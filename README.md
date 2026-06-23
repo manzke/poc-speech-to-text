@@ -25,8 +25,11 @@ developer's Mac (CPU) and a production GPU node (CUDA).
 | `server/config.py` | Pure, tested builder of the `wlk` argument vector from `STT_*` env |
 | `scripts/convert_model.py` | HF → CTranslate2 model conversion (int8 CPU / float16 GPU) |
 | `scripts/check_licenses.py` | CI gate: shipped deps must be Apache/MIT/BSD (NFR-7/ADR-009) |
+| `scripts/verify_airgap.sh` | Runs the image with egress blocked and asserts readiness + transcription (FR-6) |
+| `server/auth_gateway.py` | Ingress `auth_request` validator (static bearer / HS256 JWT) in front of `/asr` (§13) |
 | `clients/web-sdk/` | TypeScript browser SDK: mic → 16 kHz PCM → WSS, typed partial/final events |
-| `helm/stt/` | Helm chart with CPU and GPU value presets |
+| `examples/web-app/` | React + Vite reference app: dictation & live captions via the SDK |
+| `helm/stt/` | Helm chart with CPU/GPU presets and optional auth gateway |
 | `docs/` | PRD, ADR index, architecture, development, deployment |
 
 ## Quickstart (local CPU)
