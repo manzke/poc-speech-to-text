@@ -1,0 +1,15 @@
+apiVersion: v2
+name: stt
+description: Self-hosted speech-to-text service (WhisperLiveKit + faster-whisper, German Whisper baked in)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - speech-to-text
+  - whisper
+  - whisperlivekit
+  - dictation
+  - subtitles
+home: https://github.com/manzke/poc-speech-to-text
+sources:
+  - https://github.com/manzke/poc-speech-to-text

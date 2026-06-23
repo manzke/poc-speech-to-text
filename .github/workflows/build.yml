@@ -1,0 +1,65 @@
+name: build-image
+
+# Builds the image with the German model baked in (ADR-004/005).
+#   * version tags (v*)  -> multi-arch (amd64+arm64), pushed to GHCR
+#   * pull requests       -> single-arch amd64 only, NOT pushed (smoke build)
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "docker/**"
+      - "scripts/convert_model.py"
+      - "server/**"
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  buildx:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.ref_type == 'tag'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # github.ref_name is "<pr-number>/merge" on PRs -> invalid Docker tag.
+      - name: Compute image metadata
+        id: meta
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "platforms=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
+            echo "push=true" >> "$GITHUB_OUTPUT"
+            echo "variant=auto" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "platforms=linux/amd64" >> "$GITHUB_OUTPUT"
+            echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "variant=cpu" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build (push only on tags)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: ${{ steps.meta.outputs.platforms }}
+          push: ${{ steps.meta.outputs.push }}
+          tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
+          build-args: |
+            MODEL_ID=primeline/whisper-large-v3-turbo-german
+            STT_BUILD_VARIANT=${{ steps.meta.outputs.variant }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

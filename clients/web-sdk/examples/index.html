@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>STT Web SDK — demo</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+      #out { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; min-height: 8rem; white-space: pre-wrap; }
+      .partial { color: #888; }
+      .controls { display: flex; gap: .5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+      input, select, button { padding: .4rem .6rem; font-size: 1rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Self-hosted STT — demo</h1>
+    <p>
+      Captures the mic at 16&nbsp;kHz mono PCM and streams it to the
+      WhisperLiveKit <code>/asr</code> endpoint. Audio stays on your server.
+      Build the SDK first: <code>npm install &amp;&amp; npm run build</code>.
+    </p>
+
+    <div class="controls">
+      <input id="url" size="36" value="ws://localhost:8000/asr" />
+      <select id="mode">
+        <option value="dictation">dictation</option>
+        <option value="subtitles">subtitles</option>
+      </select>
+      <button id="start">Start</button>
+      <button id="stop" disabled>Stop</button>
+      <span id="status">idle</span>
+    </div>
+
+    <div id="out"></div>
+
+    <script type="module">
+      // Import the built SDK (run `npm run build` to produce dist/).
+      import { SttClient } from "../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const out = $("out");
+      let client;
+      let finalText = "";
+
+      $("start").onclick = async () => {
+        finalText = "";
+        out.textContent = "";
+        client = new SttClient({ url: $("url").value, mode: $("mode").value });
+        client.on((e) => {
+          if (e.type === "open") $("status").textContent = "connected";
+          if (e.type === "ready") $("status").textContent = "ready";
+          if (e.type === "error") $("status").textContent = "error: " + e.error.message;
+          if (e.type === "close") $("status").textContent = "closed";
+          if (e.type === "final") {
+            finalText += (finalText ? " " : "") + e.transcript.text;
+            render("");
+          }
+          if (e.type === "partial") render(e.transcript.text);
+        });
+        try {
+          await client.start();
+          $("start").disabled = true;
+          $("stop").disabled = false;
+        } catch (err) {
+          $("status").textContent = "failed: " + err.message;
+        }
+      };
+
+      $("stop").onclick = async () => {
+        await client?.stop();
+        $("start").disabled = false;
+        $("stop").disabled = true;
+        $("status").textContent = "stopped";
+      };
+
+      function render(partial) {
+        out.innerHTML = "";
+        out.append(document.createTextNode(finalText + (finalText && partial ? " " : "")));
+        if (partial) {
+          const span = document.createElement("span");
+          span.className = "partial";
+          span.textContent = partial;
+          out.append(span);
+        }
+      }
+    </script>
+  </body>
+</html>

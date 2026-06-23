@@ -1,0 +1,19 @@
+# Explicit CPU tier (ADR-007). Use with: helm install stt ./helm/stt -f values-cpu.yaml
+# Large models are not real-time on CPU; document the smaller-model trade-off for
+# customers without a GPU. To run a smaller baked model, build the image with a
+# different MODEL_ID, or mount a CT2 model dir and point modelPath at it.
+config:
+  device: cpu
+  mode: dictation
+  language: de
+
+gpu:
+  enabled: false
+
+resources:
+  requests:
+    cpu: "2"
+    memory: 4Gi
+  limits:
+    cpu: "8"
+    memory: 12Gi

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node / web SDK
+node_modules/
+clients/web-sdk/dist/
+
+# Models / baked artifacts (never commit weights; baked at image build)
+models/
+*.bin
+*.ct2
+
+# Local audio captures
+*.wav
+!server/warmup/de_warmup.wav
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

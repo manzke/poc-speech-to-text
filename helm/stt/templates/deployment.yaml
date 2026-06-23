@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stt.fullname" . }}
+  labels:
+    {{- include "stt.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "stt.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "stt.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if and .Values.gpu.enabled .Values.gpu.runtimeClassName }}
+      runtimeClassName: {{ .Values.gpu.runtimeClassName }}
+      {{- end }}
+      containers:
+        - name: stt
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.port }}
+          env:
+            {{- if .Values.config.device }}
+            - name: STT_DEVICE
+              value: {{ .Values.config.device | quote }}
+            {{- end }}
+            - name: STT_MODE
+              value: {{ .Values.config.mode | quote }}
+            - name: STT_LANGUAGE
+              value: {{ .Values.config.language | quote }}
+            - name: STT_MODEL_PATH
+              value: {{ .Values.config.modelPath | quote }}
+            - name: STT_WARMUP_FILE
+              value: {{ .Values.config.warmupFile | quote }}
+            - name: STT_PORT
+              value: {{ .Values.config.port | quote }}
+            {{- if .Values.config.forwardedAllowIps }}
+            - name: STT_FORWARDED_ALLOW_IPS
+              value: {{ .Values.config.forwardedAllowIps | quote }}
+            {{- end }}
+            {{- if .Values.config.extraArgs }}
+            - name: STT_EXTRA_ARGS
+              value: {{ .Values.config.extraArgs | quote }}
+            {{- end }}
+          resources:
+            {{- $res := deepCopy .Values.resources }}
+            {{- if .Values.gpu.enabled }}
+            {{- $_ := set $res.limits "nvidia.com/gpu" .Values.gpu.count }}
+            {{- end }}
+            {{- toYaml $res | nindent 12 }}
+          # Readiness gated on model warmup (§10): the HTTP root responds only
+          # after WhisperLiveKit has loaded the model and run the warmup decode.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+      {{- if .Values.gpu.enabled }}
+      nodeSelector:
+        {{- toYaml .Values.gpu.nodeSelector | nindent 8 }}
+      {{- else }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

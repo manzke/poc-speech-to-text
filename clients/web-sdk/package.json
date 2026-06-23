@@ -1,0 +1,30 @@
+{
+  "name": "@manzke/stt-web-sdk",
+  "version": "0.1.0",
+  "description": "Browser client SDK for the self-hosted speech-to-text service (WhisperLiveKit /asr). Captures 16 kHz mono PCM and streams it over WSS, emitting typed partial/final transcripts.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./pcm-worklet": "./src/pcm-worklet.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}
