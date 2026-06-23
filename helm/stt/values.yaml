@@ -60,6 +60,31 @@ service:
   type: ClusterIP
   port: 8000
 
+# Authentication in front of /asr (PRD §13). Runs the auth gateway
+# (server/auth_gateway.py) from the SAME image as a sidecar Deployment, wired to
+# the ingress via nginx auth_request. The audio stream never passes through it.
+auth:
+  enabled: false
+  mode: static            # static | jwt
+  port: 8080
+  replicas: 1
+  # Provide credentials via an existing Secret, or let the chart create one from
+  # the inline values below (inline is convenient for dev; prefer existingSecret
+  # + a sealed/external secret in production).
+  existingSecret: ""
+  create: true
+  token: ""               # static mode: shared bearer token
+  jwtSecret: ""           # jwt mode: HS256 signing secret
+  jwtAudience: ""         # optional
+  jwtIssuer: ""           # optional
+  # Auth gateway image; defaults to the main image when left empty.
+  image:
+    repository: ""
+    tag: ""
+  resources:
+    requests: {cpu: "50m", memory: 64Mi}
+    limits: {cpu: "250m", memory: 128Mi}
+
 # WebSocket-aware ingress (§10). Annotations target nginx; adjust for your controller.
 ingress:
   enabled: false

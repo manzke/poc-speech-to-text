@@ -10,6 +10,12 @@ metadata:
   annotations:
     {{- /* Ensure WebSocket upgrade works through the nginx ingress (§10). */}}
     nginx.org/websocket-services: {{ $fullName | quote }}
+    {{- if .Values.auth.enabled }}
+    {{- /* Authenticate every request (incl. the /asr WS upgrade) via the auth
+           gateway sub-request (PRD §13). nginx forwards Authorization and
+           X-Original-URI, which the gateway reads for the bearer/?token=. */}}
+    nginx.ingress.kubernetes.io/auth-url: "http://{{ $fullName }}-auth.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.auth.port }}/auth/verify"
+    {{- end }}
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
