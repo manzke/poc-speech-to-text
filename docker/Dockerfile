@@ -29,6 +29,13 @@ ARG TARGETARCH
 # Override with openai/whisper-large-v3 for the MIT base fallback.
 ARG MODEL_ID=primeline/whisper-large-v3-turbo-german
 
+# Build variant: auto | cuda | cpu (ADR-004).
+#   auto -> amd64 builds the CUDA stack, arm64 the CPU stack (prod default).
+#   cpu  -> force the CPU stack on any arch. Used by the CI PR smoke build so it
+#           does NOT pull the multi-GB CUDA wheels (torch + nvidia-*); the prod
+#           amd64 image is still CUDA on version tags.
+ARG STT_BUILD_VARIANT=auto
+
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     HF_HUB_DISABLE_TELEMETRY=1 \
@@ -41,19 +48,28 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# --- Dependency install: arch-specific WhisperLiveKit extra (ADR-004) ---------
-# amd64 -> CUDA extra (cu129); arm64 -> CPU extra. We deliberately do NOT install
+# --- Resolve the variant (CUDA vs CPU) once, reused by deps + quantization ----
+# Writes /tmp/stt_variant = "cuda" | "cpu".
+RUN variant="${STT_BUILD_VARIANT}" \
+    && if [ "$variant" = "auto" ]; then \
+         [ "$TARGETARCH" = "amd64" ] && variant=cuda || variant=cpu ; \
+       fi \
+    && echo "$variant" > /tmp/stt_variant \
+    && echo "[build] STT_BUILD_VARIANT=$variant (TARGETARCH=$TARGETARCH)"
+
+# --- Dependency install: WhisperLiveKit extra per resolved variant (ADR-004) --
+# cuda -> CUDA extra (cu129); cpu -> CPU extra. We deliberately do NOT install
 # the [translation] or [diarization-*] extras (ADR-008 / ADR-010 / license gate).
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
+RUN if [ "$(cat /tmp/stt_variant)" = "cuda" ]; then \
         pip install "whisperlivekit[cu129]==${WHISPERLIVEKIT_VERSION}" ctranslate2 ; \
     else \
         pip install "whisperlivekit[cpu]==${WHISPERLIVEKIT_VERSION}" ctranslate2 ; \
     fi
 
 # --- Bake the model (ADR-005) -------------------------------------------------
-# Per-arch quantization: float16 on the GPU build, int8 on the CPU build (§9).
+# Quantization follows the variant: float16 on the CUDA build, int8 on CPU (§9).
 COPY scripts/convert_model.py /app/scripts/convert_model.py
-RUN MODEL_QUANTIZATION=$([ "$TARGETARCH" = "amd64" ] && echo float16 || echo int8) \
+RUN MODEL_QUANTIZATION=$([ "$(cat /tmp/stt_variant)" = "cuda" ] && echo float16 || echo int8) \
     && python /app/scripts/convert_model.py \
         --model-id "${MODEL_ID}" \
         --output /models/de-default \

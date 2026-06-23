@@ -75,7 +75,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[convert] model already present at {output}, skipping", file=sys.stderr)
         return 0
 
-    output.mkdir(parents=True, exist_ok=True)
+    # ct2-transformers-converter creates the output dir itself and aborts if it
+    # already exists; only ensure the PARENT exists and pass --force so the step
+    # is idempotent across build-cache retries.
+    output.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
         "ct2-transformers-converter",
@@ -83,9 +86,8 @@ def main(argv: list[str] | None = None) -> int:
         "--output_dir", str(output),
         "--copy_files", "tokenizer.json", "preprocessor_config.json",
         "--quantization", args.quantization,
+        "--force",
     ]
-    if args.force:
-        cmd.append("--force")
 
     print(f"[convert] {' '.join(cmd)}", file=sys.stderr)
     result = subprocess.run(cmd)
