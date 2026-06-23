@@ -52,18 +52,23 @@ WORKDIR /app
 # Writes /tmp/stt_variant = "cuda" | "cpu".
 RUN variant="${STT_BUILD_VARIANT}" \
     && if [ "$variant" = "auto" ]; then \
-         [ "$TARGETARCH" = "amd64" ] && variant=cuda || variant=cpu ; \
+         if [ "$TARGETARCH" = "amd64" ]; then variant=cuda; else variant=cpu; fi ; \
        fi \
     && echo "$variant" > /tmp/stt_variant \
-    && echo "[build] STT_BUILD_VARIANT=$variant (TARGETARCH=$TARGETARCH)"
+    && echo "[build] STT_BUILD_VARIANT=${STT_BUILD_VARIANT} TARGETARCH=${TARGETARCH} -> ${variant}"
 
-# --- Dependency install: WhisperLiveKit extra per resolved variant (ADR-004) --
-# cuda -> CUDA extra (cu129); cpu -> CPU extra. We deliberately do NOT install
-# the [translation] or [diarization-*] extras (ADR-008 / ADR-010 / license gate).
+# --- Dependency install per resolved variant (ADR-004) ------------------------
+# transformers + torch are required by ct2-transformers-converter at build time.
+# CUDA variant: WhisperLiveKit's cu129 extra brings CUDA torch.
+# CPU variant: install CPU torch from PyTorch's CPU wheel index FIRST so the
+#   subsequent installs see torch satisfied and do NOT pull the multi-GB CUDA
+#   wheels (the [cpu] extra alone does not prevent CUDA torch on linux/amd64).
+# We deliberately do NOT install [translation] or [diarization-*] (ADR-008/010).
 RUN if [ "$(cat /tmp/stt_variant)" = "cuda" ]; then \
-        pip install "whisperlivekit[cu129]==${WHISPERLIVEKIT_VERSION}" ctranslate2 ; \
+        pip install "whisperlivekit[cu129]==${WHISPERLIVEKIT_VERSION}" ctranslate2 transformers ; \
     else \
-        pip install "whisperlivekit[cpu]==${WHISPERLIVEKIT_VERSION}" ctranslate2 ; \
+        pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu \
+        && pip install "whisperlivekit[cpu]==${WHISPERLIVEKIT_VERSION}" ctranslate2 transformers ; \
     fi
 
 # --- Bake the model (ADR-005) -------------------------------------------------
