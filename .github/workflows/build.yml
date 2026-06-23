@@ -42,10 +42,12 @@ jobs:
             echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
             echo "platforms=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
             echo "push=true" >> "$GITHUB_OUTPUT"
+            echo "variant=auto" >> "$GITHUB_OUTPUT"
           else
             echo "tag=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
             echo "platforms=linux/amd64" >> "$GITHUB_OUTPUT"
             echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "variant=cpu" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build (push only on tags)
@@ -58,5 +60,6 @@ jobs:
           tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
           build-args: |
             MODEL_ID=primeline/whisper-large-v3-turbo-german
+            STT_BUILD_VARIANT=${{ steps.meta.outputs.variant }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
